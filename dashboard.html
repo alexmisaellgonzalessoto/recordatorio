@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .container {
+            margin: 20px;
+        }
+        .debt {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+        .debt.yellow {
+            background-color: yellow;
+        }
+        .debt.red {
+            background-color: red;
+        }
+        .debt.green {
+            background-color: green;
+        }
+        .debt.black {
+            background-color: black;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Mis Deudas</h2>
+    <form id="debtForm">
+        <fieldset>
+            <legend>Registrar Deuda</legend>
+            <div class="form-group">
+                <label for="documentNumber">Número del documento:</label>
+                <input type="text" id="documentNumber" name="documentNumber" required>
+            </div>
+            <div class="form-group">
+                <label for="company">Empresa:</label>
+                <input type="text" id="company" name="company" required>
+            </div>
+            <div class="form-group">
+                <label for="amount">Monto a pagar:</label>
+                <input type="number" id="amount" name="amount" step="0.01" required>
+            </div>
+            <div class="form-group">
+                <label for="dueDate">Fecha de vencimiento:</label>
+                <input type="date" id="dueDate" name="dueDate" required>
+            </div>
+            <button type="submit">Registrar Deuda</button>
+        </fieldset>
+    </form>
+
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="file" name="file" accept=".xlsx, .xls" required>
+        <button type="submit">Subir Archivo</button>
+    </form>
+
+    <h3>Listado de Deudas</h3>
+    <div id="debtList"></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
+<script>
+    const debtList = document.getElementById('debtList');
+    const uploadForm = document.getElementById('uploadForm');
+    const debtForm = document.getElementById('debtForm');
+
+    // Event listener for manual debt form submission
+    debtForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+
+        const debt = {
+            numero: document.getElementById('documentNumber').value,
+            vencimiento: document.getElementById('dueDate').value,
+            saldo: parseFloat(document.getElementById('amount').value),
+            capital: parseFloat(document.getElementById('amount').value), // Assuming capital is the same as amount
+            interes: 0, // Assuming interest is 0 for manually entered debts
+            cuota: parseFloat(document.getElementById('amount').value), // Assuming cuota is the same as amount
+            paid: false
+        };
+        saveDebt(debt);
+        addDebtToList(debt);
+        debtForm.reset();
+    });
+
+    // Event listener for file upload form submission
+    uploadForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+
+        const fileInput = document.getElementById('file');
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(sheet);
+
+            rows.forEach(row => {
+                const { NUMERO, VENCIMIENTO, SALDO, CAPITAL, INTERES, CUOTA } = row;
+                if (NUMERO !== undefined && VENCIMIENTO && SALDO !== undefined && CAPITAL !== undefined && INTERES !== undefined && CUOTA !== undefined) {
+                    const debt = {
+                        numero: NUMERO,
+                        vencimiento: new Date(VENCIMIENTO).toISOString().split('T')[0],
+                        saldo: parseFloat(SALDO.toString().replace(/[^0-9.-]+/g,"")),
+                        capital: parseFloat(CAPITAL.toString().replace(/[^0-9.-]+/g,"")),
+                        interes: parseFloat(INTERES.toString().replace(/[^0-9.-]+/g,"")),
+                        cuota: parseFloat(CUOTA.toString().replace(/[^0-9.-]+/g,"")),
+                        paid: false
+                    };
+                    saveDebt(debt);
+                    addDebtToList(debt);
+                }
+            });
+            alert('Deudas registradas exitosamente');
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    // Save debt to localStorage
+    function saveDebt(debt) {
+        let debts = JSON.parse(localStorage.getItem('debts')) || [];
+        debts.push(debt);
+        localStorage.setItem('debts', JSON.stringify(debts));
+    }
+
+    // Get debts from localStorage
+    function getDebts() {
+        return JSON.parse(localStorage.getItem('debts')) || [];
+    }
+
+    // Add a debt to the debt list in the UI
+    function addDebtToList(debt) {
+        const debtItem = document.createElement('div');
+        debtItem.classList.add('debt');
+        debtItem.id = `debt-${debt.numero}`;
+        const dueDate = new Date(debt.vencimiento);
+        const today = new Date();
+
+        if (debt.paid) {
+            debtItem.classList.add('green');
+        } else if (dueDate < today) {
+            debtItem.classList.add('red');
+        } else if ((dueDate - today) / (1000 * 3600 * 24) <= 7) {
+            debtItem.classList.add('yellow');
+        } else {
+            debtItem.classList.add('black');
+        }
+
+        debtItem.innerHTML = `
+            <p>Número: ${debt.numero}</p>
+            <p>Vencimiento: ${dueDate.toLocaleDateString()}</p>
+            <p>Saldo: S/${debt.saldo.toFixed(2)}</p>
+            <p>Capital: S/${debt.capital.toFixed(2)}</p>
+            <p>Interés: S/${debt.interes.toFixed(2)}</p>
+            <p>Cuota: S/${debt.cuota.toFixed(2)}</p>
+            ${!debt.paid ? `<button onclick="markAsPaid('${debt.numero}')">Marcar como pagado</button>` : ''}
+        `;
+        debtList.appendChild(debtItem);
+    }
+
+    // Mark debt as paid
+    function markAsPaid(numero) {
+        let debts = getDebts();
+        debts = debts.map(debt => {
+            if (debt.numero === numero) {
+                debt.paid = true;
+                updateDebtColor(debt);
+            }
+            return debt;
+        });
+        localStorage.setItem('debts', JSON.stringify(debts));
+    }
+
+    // Update the color of the debt item in the UI
+    function updateDebtColor(debt) {
+        const debtItem = document.getElementById(`debt-${debt.numero}`);
+        if (debtItem) {
+            debtItem.classList.remove('yellow', 'red', 'black');
+            debtItem.classList.add('green');
+            const button = debtItem.querySelector('button');
+            if (button) {
+                button.remove();
+            }
+        }
+    }
+
+    // Render all debts
+    function renderDebts() {
+        debtList.innerHTML = '';
+        const debts = getDebts();
+        debts.forEach(debt => addDebtToList(debt));
+    }
+
+    // Initial render of debts
+    document.addEventListener('DOMContentLoaded', renderDebts);
+</script>
+</body>
+</html>
+
